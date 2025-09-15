@@ -1,0 +1,942 @@
+<!doctype html>
+<html lang="es" data-bs-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SmartFinder — Dispositivos Inteligentes</title>
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<style>
+  /* Fondo gris claro */
+  body {
+    background-color: #f5f5f5 !important;
+  }
+
+  /* Personalizar botones (azul celeste) */
+  .btn-primary {
+    background-color: #00bfff !important; 
+    border-color: #00bfff !important;
+  }
+  .btn-primary:hover, 
+  .btn-primary:focus {
+    background-color: #00a8e0 !important; 
+    border-color: #00a8e0 !important;
+  }
+
+  /* Estilos finos para pulir UI (clases propias en español) */
+  .navbar-brand span { font-weight: 700; letter-spacing: .3px; }
+  .tarjeta-dispositivo img { object-fit: cover; height: 180px; }
+  .insignia-tipo { text-transform: capitalize; }
+  .chip-filtro { cursor: pointer; }
+  .valoracion i { margin-right: 2px; }
+  .clave-especificacion { min-width: 140px; font-weight: 600; }
+  .pista-vacio { border: 1px dashed var(--bs-border-color); border-radius: .75rem; }
+  .form-text.monospace { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  .puntero { cursor: pointer; }
+  .tabla-fija-2 { width: 2rem; }
+  .tabla-fija-5 { width: 5rem; }
+</style>
+
+</head>
+<body>
+  <!-- NAV -->
+  <nav class="navbar navbar-expand-lg bg-body-tertiary sticky-top shadow-sm">
+    <div class="container">
+      <a class="navbar-brand d-flex align-items-center gap-2" href="#/">
+        <i class="bi bi-cpu-fill"></i> <span>SmartFinder</span>
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navegacion">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div id="navegacion" class="collapse navbar-collapse">
+        <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+          <li class="nav-item"><a class="nav-link" href="#/">Inicio</a></li>
+          <li class="nav-item"><a class="nav-link" href="#/administracion">Administración</a></li>
+        </ul>
+        <form id="formularioBusquedaNav" class="d-flex" role="search">
+          <input id="entradaBusquedaNav" class="form-control me-2" type="search" placeholder="Buscar dispositivos..." aria-label="Buscar">
+          <button class="btn btn-primary" type="submit"><i class="bi bi-search"></i></button>
+        </form>
+      </div>
+    </div>
+  </nav>
+
+  <!-- MAIN APP -->
+  <main class="container my-4" id="aplicacion"></main>
+
+  <!-- TOASTS -->
+  <div class="toast-container position-fixed bottom-0 end-0 p-3" id="avisos"></div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- APP JS -->
+  <script>
+  ;(() => {
+    /* ============================== *
+     *  Núcleo: BusEventos + Utilidades
+     * ============================== */
+    const BusEventos = {
+      eventos: new Map(),
+      suscribir(evt, cb){ (this.eventos.get(evt) ?? this.eventos.set(evt, []).get(evt)).push(cb) },
+      emitir(evt, datos){ (this.eventos.get(evt) || []).forEach(cb => cb(datos)) }
+    }
+
+    const Utilidades = {
+      generarId: () => crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36)+Math.random().toString(36).substring(2,9)),
+      formatearPrecio: v => typeof v === 'number' ? v.toLocaleString('es-CO',{style:'currency',currency:'COP'}) : v,
+      formatearFecha: iso => new Date(iso).toLocaleDateString('es-CO', {year:'numeric', month:'short'}),
+      jsonSeguro: (str, respaldo) => { try { return JSON.parse(str) } catch { return respaldo } },
+      seleccionar: (sel, raiz=document) => raiz.querySelector(sel),
+      seleccionarTodos: (sel, raiz=document) => [...raiz.querySelectorAll(sel)],
+      // Parámetros en hash (#/?q=...&brand=...)
+      obtenerConsulta(){
+        const h = location.hash || '#/';
+        const [ruta, qp] = h.split('?');
+        const parametros = new URLSearchParams(qp || '');
+        return { ruta, parametros };
+      },
+      establecerConsulta(objParams){
+        const { ruta } = Utilidades.obtenerConsulta();
+        const busqueda = new URLSearchParams(objParams);
+        location.hash = ruta + (busqueda.toString() ? '?' + busqueda.toString() : '');
+      },
+      mostrarAviso({titulo='Listo', cuerpo='', variante='primary', demora=2500}){
+        const id = 'av'+Date.now();
+        const el = document.createElement('div');
+        el.className = `toast align-items-center border-0 text-bg-${variante}`;
+        el.id = id;
+        el.role = 'status';
+        el.innerHTML = `
+          <div class="d-flex">
+            <div class="toast-body">
+              <strong>${titulo}:</strong> ${cuerpo}
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Cerrar"></button>
+          </div>`;
+        Utilidades.seleccionar('#avisos').appendChild(el);
+        new bootstrap.Toast(el, { delay: demora }).show();
+      },
+      estrellas(calificacion){
+        const r = Math.max(1, Math.min(5, Number(calificacion)||1));
+        return '<span class="valoracion text-warning">'+ '★'.repeat(r) + '<span class="text-muted">'+'★'.repeat(5-r)+'</span></span>';
+      }
+    };
+
+    /* =================== *
+     *  Infra: Almacén     *
+     * =================== */
+    const AlmacenDatos = (() => {
+      const CLAVES = {
+        marcas: 'sf_brands',
+        dispositivos: 'sf_devices',
+        comentarios: 'sf_comments'
+      };
+
+      function cargarDatosIniciales(){
+        if(!localStorage.getItem(CLAVES.marcas)){
+          const marcas = [
+            { id: Utilidades.generarId(), name: 'Apple' },
+            { id: Utilidades.generarId(), name: 'Samsung' },
+            { id: Utilidades.generarId(), name: 'Lenovo' },
+            { id: Utilidades.generarId(), name: 'Xiaomi' },
+          ];
+          localStorage.setItem(CLAVES.marcas, JSON.stringify(marcas));
+        }
+        if(!localStorage.getItem(CLAVES.dispositivos)){
+          const [apple, samsung, lenovo, xiaomi] = Utilidades.jsonSeguro(localStorage.getItem(CLAVES.marcas), []);
+          const dispositivos = [
+            {
+              id: Utilidades.generarId(),
+              name: 'iPhone 15 Pro',
+              brandId: apple.id,
+              type: 'móvil',
+              releaseDate: '2023-09-22',
+              price: 5999900,
+              shortDesc: 'Titanio, chip A17 Pro, cámaras Pro.',
+              review: 'Un tope de gama con excelente rendimiento y cámaras versátiles. La batería es sólida y el peso reducido se agradece.',
+              images: ['https://images.unsplash.com/photo-1695048133506-26f3856fc0d9?q=80&w=1470&auto=format&fit=crop'],
+              specs: { Pantalla: '6.1" OLED 120Hz', Procesador: 'A17 Pro', RAM: '8 GB', Almacenamiento: '256 GB', Batería: '3274 mAh', SO: 'iOS' }
+            },
+            {
+              id: Utilidades.generarId(),
+              name: 'Galaxy S24 Ultra',
+              brandId: samsung.id,
+              type: 'móvil',
+              releaseDate: '2024-01-31',
+              price: 6999900,
+              shortDesc: 'Cámara 200 MP, S Pen, funciones IA.',
+              review: 'Excelente pantalla y zoom. El S Pen añade valor real. La IA ayuda en edición y resumen.',
+              images: ['https://images.unsplash.com/photo-1706868791334-1e05c770d34a?q=80&w=1470&auto=format&fit=crop'],
+              specs: { Pantalla: '6.8" AMOLED 120Hz', Procesador: 'Snapdragon 8 Gen 3', RAM: '12 GB', Almacenamiento: '256 GB', Batería: '5000 mAh', SO: 'Android' }
+            },
+            {
+              id: Utilidades.generarId(),
+              name: 'Lenovo Yoga Slim 7',
+              brandId: lenovo.id,
+              type: 'portátil',
+              releaseDate: '2023-05-15',
+              price: 4299900,
+              shortDesc: 'Ultraligero, gran batería y buen teclado.',
+              review: 'Ideal para estudiantes y profesionales; equilibrio entre portabilidad y rendimiento.',
+              images: ['https://images.unsplash.com/photo-1527443154391-507e9dc6c5cc?q=80&w=1470&auto=format&fit=crop'],
+              specs: { Pantalla: '14" IPS', Procesador: 'Ryzen 7', RAM: '16 GB', Almacenamiento: '512 GB SSD', SO: 'Windows 11' }
+            },
+            {
+              id: Utilidades.generarId(),
+              name: 'Xiaomi 14',
+              brandId: xiaomi.id,
+              type: 'móvil',
+              releaseDate: '2024-02-26',
+              price: 3499900,
+              shortDesc: 'Cámaras Leica y gran rendimiento.',
+              review: 'Relación calidad-precio destacada, buen software y gran autonomía.',
+              images: ['https://images.unsplash.com/photo-1611186871348-b1ce696e52c9?q=80&w=1470&auto=format&fit=crop'],
+              specs: { Pantalla: '6.36" AMOLED 120Hz', Procesador: 'Snapdragon 8 Gen 3', RAM: '12 GB', Almacenamiento: '256 GB', Batería: '4610 mAh', SO: 'Android' }
+            },
+          ];
+          localStorage.setItem(CLAVES.dispositivos, JSON.stringify(dispositivos));
+        }
+        if(!localStorage.getItem(CLAVES.comentarios)){
+          localStorage.setItem(CLAVES.comentarios, JSON.stringify([]));
+        }
+      }
+      cargarDatosIniciales();
+
+      const leer = k => Utilidades.jsonSeguro(localStorage.getItem(k), []);
+      const escribir = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+
+      return {
+        marcas: {
+          listar: () => leer(CLAVES.marcas),
+          agregar: nombre => {
+            const marcas = leer(CLAVES.marcas);
+            if (marcas.some(b => b.name.toLowerCase() === nombre.trim().toLowerCase())) return null;
+            const nueva = { id: Utilidades.generarId(), name: nombre.trim() };
+            marcas.push(nueva); escribir(CLAVES.marcas, marcas);
+            BusEventos.emitir('marcas:cambiadas');
+            return nueva;
+          },
+          obtener: id => leer(CLAVES.marcas).find(b => b.id === id) || null
+        },
+        dispositivos: {
+          listarPlano: () => leer(CLAVES.dispositivos),
+          upsertar: (disp) => {
+            const arr = leer(CLAVES.dispositivos);
+            const idx = arr.findIndex(d => d.id === disp.id);
+            if(idx >= 0) arr[idx] = disp; else arr.push(disp);
+            escribir(CLAVES.dispositivos, arr);
+            BusEventos.emitir('dispositivos:cambiados');
+            return disp;
+          },
+          eliminar: (id) => {
+            const arr = leer(CLAVES.dispositivos).filter(d => d.id !== id);
+            escribir(CLAVES.dispositivos, arr);
+            BusEventos.emitir('dispositivos:cambiados');
+          },
+          obtener: id => leer(CLAVES.dispositivos).find(d => d.id === id) || null
+        },
+        comentarios: {
+          listarPorDispositivo: idDispositivo => leer(CLAVES.comentarios)
+            .filter(c => c.deviceId === idDispositivo)
+            .sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)),
+          agregar: ({deviceId, author, rating, text}) => {
+            const c = { id: Utilidades.generarId(), deviceId, author: author?.trim() || 'Anónimo', rating: Number(rating)||5, text: text.trim(), createdAt: new Date().toISOString() };
+            const todos = leer(CLAVES.comentarios); todos.push(c);
+            escribir(CLAVES.comentarios, todos);
+            BusEventos.emitir('comentarios:cambiados', deviceId);
+            return c;
+          }
+        }
+      }
+    })();
+
+    /* ======================== *
+     *  Capa de Servicios (API) *
+     * ======================== */
+    
+    const API = 'http://localhost:8081';    // ← tu backend corre en 8081
+const token = () => localStorage.getItem('sf_token');
+
+async function http(path, { method='GET', body, auth=false } = {}) {
+  const res = await fetch(API + path, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(auth && token() ? { 'Authorization': 'Bearer ' + token() } : {})
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.status !== 204 ? res.json() : null;
+}
+
+const ServicioDispositivos = {
+  // Listado con filtros del Home
+  listar: ({ q='', brandId='', type='', sort='release_desc' } = {}) =>
+    http(`/api/devices?q=${encodeURIComponent(q)}&brandId=${brandId}&type=${encodeURIComponent(type)}&sort=${sort}`),
+
+  // Detalle
+  obtenerPorId: id => http(`/api/devices/${id}`),
+
+  // CRUD (módulo Administración) — requieren token JWT
+  crear: payload =>
+    http('/api/devices', { method:'POST', body:payload, auth:true })
+      .then(r => { BusEventos.emitir('dispositivos:cambiados'); return r; }),
+
+  actualizar: (id, parche) =>
+    http(`/api/devices/${id}`, { method:'PUT', body:parche, auth:true })
+      .then(r => { BusEventos.emitir('dispositivos:cambiados'); return r; }),
+
+  eliminar: id =>
+    http(`/api/devices/${id}`, { method:'DELETE', auth:true })
+      .then(() => { BusEventos.emitir('dispositivos:cambiados'); }),
+
+  marcas: {
+    listar: () => http('/api/brands'),
+    agregar: nombre =>
+      http('/api/brands', { method:'POST', body:{ name:nombre }, auth:true })
+        .then(r => { BusEventos.emitir('marcas:cambiadas'); return r; })
+  },
+
+  comentarios: {
+    paraDispositivo: id => http(`/api/comments/device/${id}`),
+    agregar: (id, autor, calif, texto) =>
+      http(`/api/comments/device/${id}`, { method:'POST', body:{ author:autor, rating:calif, text:text } })
+        .then(r => { BusEventos.emitir('comentarios:cambiados', id); return r; })
+  }
+};
+
+// Login helper (guarda el token para CRUD en administración)
+async function sfLogin(emailOrUsername, password) {
+  const r = await http('/api/auth/login', {
+    method: 'POST',
+    body: { emailOrUsername, password }
+  });
+  localStorage.setItem('sf_token', r.token);
+  return r;
+}
+// ======= Fin capa de servicios =======};
+
+    /* ============== *
+     *  Enrutador     *
+     * ============== */
+    const Enrutador = (() => {
+      const rutas = [];
+      function agregar(patron, manejador){ rutas.push({ patron, manejador }); }
+      function analizar(){
+        const { ruta } = Utilidades.obtenerConsulta();
+        for(const r of rutas){
+          const coincide = ruta.match(r.patron);
+          if(coincide) return r.manejador(...coincide.slice(1));
+        }
+        // por defecto
+        Vistas.Inicio.renderizar();
+      }
+      window.addEventListener('hashchange', analizar);
+      return { agregar, analizar };
+    })();
+
+    /* ======================= *
+     *  Componentes / Vistas   *
+     * ======================= */
+    const Vistas = {};
+
+    // ---- INICIO (listado + filtros) ----
+    Vistas.Inicio = {
+      renderizar(){
+        const { parametros } = Utilidades.obtenerConsulta();
+        const q = parametros.get('q') || '';
+        const brandId = parametros.get('brand') || '';
+        const type = parametros.get('type') || '';
+        const sort = parametros.get('sort') || 'release_desc';
+        const marcas = ServicioDispositivos.marcas.listar();
+        const dispositivos = ServicioDispositivos.listar({ q, brandId, type, sort });
+
+        Utilidades.seleccionar('#aplicacion').innerHTML = `
+          <section class="mb-3">
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+              <button class="btn btn-outline-secondary d-lg-none" data-bs-toggle="offcanvas" data-bs-target="#lienzoFiltros">
+                <i class="bi bi-filter"></i> Filtros
+              </button>
+              <div class="ms-auto text-muted small">${dispositivos.length} resultados</div>
+            </div>
+          </section>
+
+          <section class="row gy-4">
+            <aside class="col-lg-3 d-none d-lg-block">
+              ${this.htmlFiltros({ q, brandId, type, sort, marcas })}
+            </aside>
+            <div class="col-lg-9">
+              <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-3">
+                ${dispositivos.map(this.tarjeta).join('') || `
+                  <div class="col">
+                    <div class="p-4 pista-vacio text-center text-muted">
+                      <i class="bi bi-search fs-4 d-block mb-2"></i>
+                      No hay resultados. Ajusta filtros o términos de búsqueda.
+                    </div>
+                  </div>`}
+              </div>
+            </div>
+          </section>
+
+          <!-- Offcanvas Filtros (móvil) -->
+          <div class="offcanvas offcanvas-start" tabindex="-1" id="lienzoFiltros">
+            <div class="offcanvas-header">
+              <h5 class="offcanvas-title"><i class="bi bi-filter"></i> Filtros</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Cerrar"></button>
+            </div>
+            <div class="offcanvas-body">
+              ${this.htmlFiltros({ q, brandId, type, sort, marcas, enCanvas:true })}
+            </div>
+          </div>
+        `;
+
+        // enlazar filtros
+        this.enlazarFiltros();
+        // sincronizar búsqueda navbar
+        Utilidades.seleccionar('#entradaBusquedaNav').value = q;
+      },
+      tarjeta(d){
+        const img = (d.images && d.images[0]) || 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?q=80&w=1470&auto=format&fit=crop';
+        return `
+          <div class="col">
+            <div class="card tarjeta-dispositivo h-100 shadow-sm">
+              <img src="${img}" class="card-img-top" alt="${d.name}">
+              <div class="card-body d-flex flex-column">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <span class="badge text-bg-secondary insignia-tipo">${d.type}</span>
+                  <span class="text-muted small">${Utilidades.formatearFecha(d.releaseDate)}</span>
+                </div>
+                <h6 class="card-title mb-1">${d.name}</h6>
+                <div class="text-muted small mb-2">${d.brandName}</div>
+                <p class="card-text small flex-grow-1">${d.shortDesc || ''}</p>
+                <div class="d-flex align-items-center justify-content-between">
+                  <span class="fw-semibold">${d.price ? Utilidades.formatearPrecio(d.price) : ''}</span>
+                  <a class="btn btn-primary btn-sm" href="#/dispositivo/${d.id}">
+                    Ver detalles <i class="bi bi-arrow-right-short"></i>
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>`;
+      },
+      htmlFiltros({ q, brandId, type, sort, marcas }){
+        return `
+          <div class="card border-0 shadow-sm">
+            <div class="card-body">
+              <div class="mb-3">
+                <label class="form-label">Buscar</label>
+                <input id="f-q" type="search" class="form-control" placeholder="Nombre, marca..." value="${q}">
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Marca</label>
+                <select id="f-brand" class="form-select">
+                  <option value="">Todas</option>
+                  ${marcas.map(b => `<option value="${b.id}" ${b.id===brandId?'selected':''}>${b.name}</option>`).join('')}
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Tipo</label>
+                <select id="f-type" class="form-select">
+                  ${['', 'móvil', 'portátil', 'tablet', 'wearable'].map(t => `<option value="${t}" ${t===type?'selected':''}>${t||'Todos'}</option>`).join('')}
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Ordenar por</label>
+                <select id="f-sort" class="form-select">
+                  <option value="release_desc" ${sort==='release_desc'?'selected':''}>Fecha lanzamiento (nuevo → viejo)</option>
+                  <option value="release_asc" ${sort==='release_asc'?'selected':''}>Fecha lanzamiento (viejo → nuevo)</option>
+                  <option value="price_desc" ${sort==='price_desc'?'selected':''}>Precio (alto → bajo)</option>
+                  <option value="price_asc" ${sort==='price_asc'?'selected':''}>Precio (bajo → alto)</option>
+                </select>
+              </div>
+              <div class="d-grid gap-2">
+                <button id="f-apply" class="btn btn-primary"><i class="bi bi-check2-circle"></i> Aplicar</button>
+                <button id="f-clear" class="btn btn-outline-secondary"><i class="bi bi-eraser"></i> Limpiar</button>
+              </div>
+            </div>
+          </div>`;
+      },
+      enlazarFiltros(){
+        const { parametros } = Utilidades.obtenerConsulta();
+        const aplicar = () => {
+          const q = Utilidades.seleccionar('#f-q')?.value || '';
+          const brand = Utilidades.seleccionar('#f-brand')?.value || '';
+          const type  = Utilidades.seleccionar('#f-type')?.value || '';
+          const sort  = Utilidades.seleccionar('#f-sort')?.value || 'release_desc';
+          Utilidades.establecerConsulta({ q, brand, type, sort });
+        };
+        Utilidades.seleccionar('#f-apply')?.addEventListener('click', aplicar);
+        Utilidades.seleccionar('#f-clear')?.addEventListener('click', () => {
+          Utilidades.establecerConsulta({});
+        });
+
+        // búsqueda en la navbar
+        Utilidades.seleccionar('#formularioBusquedaNav').addEventListener('submit', (e) => {
+          e.preventDefault();
+          const q = Utilidades.seleccionar('#entradaBusquedaNav').value || '';
+          const brand = parametros.get('brand') || '';
+          const type = parametros.get('type') || '';
+          const sort = parametros.get('sort') || 'release_desc';
+          Utilidades.establecerConsulta({ q, brand, type, sort });
+        });
+      }
+    };
+
+    // ---- DETALLE ----
+    Vistas.Detalle = {
+      renderizar(id){
+        const d = ServicioDispositivos.obtenerPorId(id);
+        if(!d){
+          Utilidades.seleccionar('#aplicacion').innerHTML = `
+            <div class="alert alert-warning">
+              Dispositivo no encontrado. <a href="#/">Volver al inicio</a>
+            </div>`;
+          return;
+        }
+        const comentarios = ServicioDispositivos.comentarios.paraDispositivo(d.id);
+        Utilidades.seleccionar('#aplicacion').innerHTML = `
+          <nav aria-label="breadcrumb" class="mb-3">
+            <ol class="breadcrumb">
+              <li class="breadcrumb-item"><a href="#/">Inicio</a></li>
+              <li class="breadcrumb-item active" aria-current="page">${d.name}</li>
+            </ol>
+          </nav>
+
+          <section class="row g-4">
+            <div class="col-md-6">
+              ${this.galeria(d.images)}
+            </div>
+            <div class="col-md-6">
+              <h2 class="h4 mb-1">${d.name}</h2>
+              <div class="text-muted mb-2">${d.brandName} • ${d.type} • Lanzamiento: ${Utilidades.formatearFecha(d.releaseDate)}</div>
+              <div class="h5 mb-3">${d.price ? Utilidades.formatearPrecio(d.price) : ''}</div>
+              <p class="mb-3">${d.shortDesc || ''}</p>
+              <div class="mb-4">
+                <h6 class="mb-2">Especificaciones</h6>
+                ${this.tablaEspecificaciones(d.specs)}
+              </div>
+            </div>
+          </section>
+
+          <section class="mt-4">
+            <h3 class="h5">Reseña</h3>
+            <p>${d.review || 'Sin reseña.'}</p>
+          </section>
+
+          <section class="mt-4">
+            <h3 class="h5 d-flex align-items-center justify-content-between">
+              Comentarios <span class="badge text-bg-secondary">${comentarios.length}</span>
+            </h3>
+            <div class="vstack gap-3 my-3">
+              ${comentarios.map(this.elementoComentario).join('') || `
+                <div class="p-4 pista-vacio text-center text-muted">
+                  <i class="bi bi-chat-dots fs-4 d-block mb-2"></i>
+                  Aún no hay comentarios. ¡Sé el primero!
+                </div>`}
+            </div>
+            ${this.formularioComentario(d.id)}
+          </section>
+        `;
+
+        this.enlazarFormularioComentario(d.id);
+        // actualizar dinámicamente si cambian comentarios
+        const alCambiar = idDisp => {
+          if (idDisp !== d.id) return;
+          this.renderizar(d.id);
+        };
+        BusEventos.suscribir('comentarios:cambiados', alCambiar);
+      },
+      galeria(imgs=[]){
+        if(!imgs.length) imgs = ['https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?q=80&w=1470&auto=format&fit=crop'];
+        const id = 'carrusel-'+Utilidades.generarId();
+        const diapositivas = imgs.map((src,i)=>`
+          <div class="carousel-item ${i===0?'active':''}">
+            <img src="${src}" class="d-block w-100" alt="Foto ${i+1}">
+          </div>`).join('');
+        return `
+          <div id="${id}" class="carousel slide shadow-sm rounded overflow-hidden">
+            <div class="carousel-inner">${diapositivas}</div>
+            ${imgs.length>1 ? `
+              <button class="carousel-control-prev" type="button" data-bs-target="#${id}" data-bs-slide="prev">
+                <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                <span class="visually-hidden">Anterior</span>
+              </button>
+              <button class="carousel-control-next" type="button" data-bs-target="#${id}" data-bs-slide="next">
+                <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                <span class="visually-hidden">Siguiente</span>
+              </button>` : ''}
+          </div>`;
+      },
+      tablaEspecificaciones(especificaciones={}){
+        const filas = Object.entries(especificaciones).map(([k,v])=>`
+          <div class="d-flex gap-3 py-1 border-bottom">
+            <div class="clave-especificacion">${k}</div>
+            <div class="flex-grow-1">${v}</div>
+          </div>`).join('');
+        return `<div class="border rounded">${filas || '<div class="p-3 text-muted">Sin especificaciones.</div>'}</div>`;
+      },
+      elementoComentario(c){
+        return `
+          <div class="card border-0 shadow-sm">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <strong>${c.author}</strong>
+                <small class="text-muted">${new Date(c.createdAt).toLocaleString('es-CO')}</small>
+              </div>
+              <div class="mb-2">${Utilidades.estrellas(c.rating)}</div>
+              <p class="mb-0">${c.text}</p>
+            </div>
+          </div>`;
+      },
+      formularioComentario(idDispositivo){
+        return `
+          <form id="formularioComentario" class="card border-0 shadow-sm">
+            <div class="card-body">
+              <div class="row g-3">
+                <div class="col-md-4">
+                  <label class="form-label">Nombre</label>
+                  <input name="author" type="text" class="form-control" placeholder="Tu nombre (opcional)">
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label">Calificación</label>
+                  <select name="rating" class="form-select">
+                    ${[5,4,3,2,1].map(v=>`<option value="${v}">${v}</option>`).join('')}
+                  </select>
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Comentario</label>
+                  <textarea name="text" class="form-control" rows="3" required minlength="5" placeholder="¿Qué te pareció este dispositivo?"></textarea>
+                  <div class="form-text">Sé respetuoso y específico. Mínimo 5 caracteres.</div>
+                </div>
+              </div>
+            </div>
+            <div class="card-footer d-flex justify-content-end gap-2">
+              <a href="#/" class="btn btn-outline-secondary">Volver</a>
+              <button class="btn btn-primary" type="submit"><i class="bi bi-send"></i> Publicar</button>
+            </div>
+          </form>`;
+      },
+      enlazarFormularioComentario(idDispositivo){
+        Utilidades.seleccionar('#formularioComentario').addEventListener('submit', (e) => {
+          e.preventDefault();
+          const fd = new FormData(e.currentTarget);
+          const texto = (fd.get('text')||'').toString().trim();
+          if(texto.length<5){
+            Utilidades.mostrarAviso({ titulo:'Ups', cuerpo:'El comentario es muy corto.', variante:'warning' }); return;
+          }
+          ServicioDispositivos.comentarios.agregar(idDispositivo, fd.get('author'), fd.get('rating'), texto);
+          Utilidades.mostrarAviso({ titulo:'Gracias', cuerpo:'Comentario publicado', variante:'success' });
+          e.currentTarget.reset();
+        });
+      }
+    };
+
+    // ---- ADMINISTRACIÓN ----
+    Vistas.Administracion = {
+      renderizar(){
+        const marcas = ServicioDispositivos.marcas.listar();
+        const dispositivos = ServicioDispositivos.listar({});
+        Utilidades.seleccionar('#aplicacion').innerHTML = `
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <h2 class="h4 mb-0"><i class="bi bi-gear"></i> Administración</h2>
+            <a class="btn btn-outline-primary" href="#/">Ir al inicio</a>
+          </div>
+
+          <div class="row g-4">
+            <div class="col-lg-4">
+              <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                  <h5 class="card-title">Marcas</h5>
+                  <div class="input-group mb-2">
+                    <input id="nombreMarca" type="text" class="form-control" placeholder="Nombre de la marca">
+                    <button id="btnAgregarMarca" class="btn btn-primary"><i class="bi bi-plus-lg"></i></button>
+                  </div>
+                  <ul class="list-group small" id="listaMarcas">
+                    ${marcas.map(b=>`<li class="list-group-item d-flex justify-content-between align-items-center">
+                      ${b.name}<span class="badge text-bg-secondary">${b.id.slice(0,6)}</span>
+                    </li>`).join('')}
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-lg-8">
+              <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                  <h5 class="card-title">Nuevo/Editar dispositivo</h5>
+                  ${this.formularioDispositivoHTML(marcas)}
+                </div>
+              </div>
+
+              <div class="card border-0 shadow-sm mt-4">
+                <div class="card-body">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <h5 class="card-title mb-0">Inventario (${dispositivos.length})</h5>
+                    <div class="text-muted small">Click en <i class="bi bi-pencil"></i> para cargar el formulario</div>
+                  </div>
+                  <div class="table-responsive">
+                    <table class="table align-middle mt-2">
+                      <thead class="table-light">
+                        <tr>
+                          <th class="tabla-fija-2"></th>
+                          <th>Nombre</th>
+                          <th>Marca</th>
+                          <th class="text-capitalize tabla-fija-5">Tipo</th>
+                          <th>Lanzamiento</th>
+                          <th>Precio</th>
+                          <th class="tabla-fija-2"></th>
+                        </tr>
+                      </thead>
+                      <tbody id="tablaDispositivos">
+                        ${dispositivos.map(d=>this.fila(d)).join('')}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div class="alert alert-info mt-3">
+                <strong>Siguiente paso (Back-end):</strong> expón un API REST <code>/api/devices</code>, <code>/api/brands</code>, <code>/api/comments</code>.
+                Cambia la capa de servicios para usar <code>fetch()</code> en lugar de <code>localStorage</code>.
+              </div>
+            </div>
+          </div>
+        `;
+        this.enlazar();
+      },
+      formularioDispositivoHTML(marcas){
+        return `
+          <form id="formularioDispositivo" class="row g-3">
+            <input type="hidden" name="id" value="">
+            <div class="col-md-8">
+              <label class="form-label">Nombre</label>
+              <input name="name" type="text" class="form-control" required placeholder="p.ej. Galaxy S24 Ultra">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Tipo</label>
+              <select name="type" class="form-select" required>
+                ${['móvil','portátil','tablet','wearable'].map(t=>`<option value="${t}">${t}</option>`).join('')}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Marca</label>
+              <select name="brandId" class="form-select" required>
+                ${marcas.map(b=>`<option value="${b.id}">${b.name}</option>`).join('')}
+              </select>
+              <div class="form-text">¿No ves tu marca? Agrégala a la izquierda.</div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Fecha de lanzamiento</label>
+              <input name="releaseDate" type="date" class="form-control" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Precio (COP)</label>
+              <input name="price" type="number" min="0" step="1000" class="form-control" placeholder="0">
+            </div>
+            <div class="col-12">
+              <label class="form-label">Descripción corta</label>
+              <input name="shortDesc" type="text" class="form-control" placeholder="Resumen breve...">
+            </div>
+            <div class="col-12">
+              <label class="form-label">Reseña</label>
+              <textarea name="review" rows="3" class="form-control" placeholder="Opinión, puntos fuertes y débiles..."></textarea>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label">Imágenes (URLs)</label>
+              <div id="grupoImagenes" class="vstack gap-2">
+                <div class="input-group"><input name="image" type="url" class="form-control" placeholder="https://..."><button class="btn btn-outline-secondary agregar-img" type="button"><i class="bi bi-plus-lg"></i></button></div>
+              </div>
+              <div class="form-text monospace">Aloja imágenes públicas (Unsplash/Imgbb/etc.).</div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label">Especificaciones (clave: valor)</label>
+              <div id="grupoEspecificaciones" class="vstack gap-2">
+                ${['Pantalla','Procesador','RAM','Almacenamiento','Batería','SO'].map(k => `
+                  <div class="input-group">
+                    <input name="claveEspecificacion" type="text" class="form-control" placeholder="${k}">
+                    <input name="valorEspecificacion" type="text" class="form-control" placeholder="Valor">
+                    <button class="btn btn-outline-secondary agregar-spec" type="button"><i class="bi bi-plus-lg"></i></button>
+                  </div>`).join('')}
+              </div>
+            </div>
+
+            <div class="col-12 d-flex justify-content-end gap-2">
+              <button type="reset" class="btn btn-outline-secondary">Limpiar</button>
+              <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Guardar</button>
+            </div>
+          </form>
+        `;
+      },
+      fila(d){
+        return `
+          <tr data-id="${d.id}">
+            <td><a class="text-decoration-none" href="#/dispositivo/${d.id}" title="Ver"><i class="bi bi-box-arrow-up-right"></i></a></td>
+            <td>${d.name}</td>
+            <td>${d.brandName}</td>
+            <td class="text-capitalize">${d.type}</td>
+            <td>${Utilidades.formatearFecha(d.releaseDate)}</td>
+            <td>${d.price ? Utilidades.formatearPrecio(d.price) : ''}</td>
+            <td class="text-nowrap">
+              <button class="btn btn-sm btn-outline-secondary me-1 btn-editar" title="Editar"><i class="bi bi-pencil"></i></button>
+              <button class="btn btn-sm btn-outline-danger btn-eliminar" title="Eliminar"><i class="bi bi-trash"></i></button>
+            </td>
+          </tr>`;
+      },
+      enlazar(){
+        // Agregar marca
+        Utilidades.seleccionar('#btnAgregarMarca').addEventListener('click', () => {
+          const nombre = Utilidades.seleccionar('#nombreMarca').value.trim();
+          if(!nombre) return;
+          const m = ServicioDispositivos.marcas.agregar(nombre);
+          if(!m) { Utilidades.mostrarAviso({ titulo:'Atención', cuerpo:'La marca ya existe', variante:'warning' }); return; }
+          Utilidades.mostrarAviso({ titulo:'Ok', cuerpo:'Marca agregada', variante:'success' });
+          this.renderizar(); // recargar
+        });
+
+        // Añadir filas dinámicas
+        Utilidades.seleccionarTodos('.agregar-img').forEach(btn => btn.addEventListener('click', () => {
+          const cont = Utilidades.seleccionar('#grupoImagenes');
+          const fila = document.createElement('div');
+          fila.className = 'input-group';
+          fila.innerHTML = `<input name="image" type="url" class="form-control" placeholder="https://...">
+                           <button class="btn btn-outline-danger eliminar-img" type="button"><i class="bi bi-x-lg"></i></button>`;
+          cont.appendChild(fila);
+          fila.querySelector('.eliminar-img').addEventListener('click', () => fila.remove());
+        }));
+        Utilidades.seleccionarTodos('.agregar-spec').forEach(btn => btn.addEventListener('click', () => {
+          const cont = Utilidades.seleccionar('#grupoEspecificaciones');
+          const fila = document.createElement('div');
+          fila.className = 'input-group';
+          fila.innerHTML = `<input name="claveEspecificacion" type="text" class="form-control" placeholder="Clave">
+                           <input name="valorEspecificacion" type="text" class="form-control" placeholder="Valor">
+                           <button class="btn btn-outline-danger eliminar-spec" type="button"><i class="bi bi-x-lg"></i></button>`;
+          cont.appendChild(fila);
+          fila.querySelector('.eliminar-spec').addEventListener('click', () => fila.remove());
+        }));
+
+        // Guardar dispositivo
+        Utilidades.seleccionar('#formularioDispositivo').addEventListener('submit', (e) => {
+          e.preventDefault();
+          const fd = new FormData(e.currentTarget);
+          const id = fd.get('id');
+          const imagenes = Utilidades.seleccionarTodos('input[name="image"]').map(i => i.value.trim()).filter(Boolean);
+          const claves = Utilidades.seleccionarTodos('input[name="claveEspecificacion"]').map(i => i.value.trim());
+          const valores = Utilidades.seleccionarTodos('input[name="valorEspecificacion"]').map(i => i.value.trim());
+          const especificaciones = {};
+          claves.forEach((k,i)=>{ if(k && valores[i]) especificaciones[k]=valores[i] });
+
+          const carga = {
+            name: fd.get('name'),
+            brandId: fd.get('brandId'),
+            type: fd.get('type'),
+            releaseDate: fd.get('releaseDate'),
+            price: fd.get('price'),
+            shortDesc: fd.get('shortDesc'),
+            review: fd.get('review'),
+            images: imagenes,
+            specs: especificaciones
+          };
+
+          if (id) ServicioDispositivos.actualizar(id, carga);
+          else ServicioDispositivos.crear(carga);
+
+          Utilidades.mostrarAviso({ titulo:'Guardado', cuerpo:'Dispositivo registrado', variante:'success' });
+          e.currentTarget.reset();
+          Vistas.Administracion.renderizar();
+        });
+
+        // Editar / Eliminar filas
+        Utilidades.seleccionarTodos('#tablaDispositivos .btn-editar').forEach(btn=>{
+          btn.addEventListener('click', (e)=>{
+            const tr = e.currentTarget.closest('tr');
+            const id = tr.getAttribute('data-id');
+            const d = ServicioDispositivos.obtenerPorId(id);
+            const form = Utilidades.seleccionar('#formularioDispositivo');
+            form.reset();
+            form.querySelector('[name="id"]').value = d.id;
+            form.querySelector('[name="name"]').value = d.name;
+            form.querySelector('[name="type"]').value = d.type;
+            form.querySelector('[name="brandId"]').value = d.brandId;
+            form.querySelector('[name="releaseDate"]').value = d.releaseDate.slice(0,10);
+            form.querySelector('[name="price"]').value = d.price || '';
+            form.querySelector('[name="shortDesc"]').value = d.shortDesc || '';
+            form.querySelector('[name="review"]').value = d.review || '';
+
+            // re-crear imágenes
+            const contImg = Utilidades.seleccionar('#grupoImagenes'); contImg.innerHTML = '';
+            (d.images||['']).forEach((url, idx) => {
+              const fila = document.createElement('div');
+              fila.className = 'input-group mb-2';
+              fila.innerHTML = `<input name="image" type="url" class="form-control" placeholder="https://..." value="${url}">
+                               ${idx===0 ? '<button class="btn btn-outline-secondary agregar-img" type="button"><i class="bi bi-plus-lg"></i></button>'
+                                          : '<button class="btn btn-outline-danger eliminar-img" type="button"><i class="bi bi-x-lg"></i></button>'}`;
+              contImg.appendChild(fila);
+            });
+            Vistas.Administracion.enlazar(); // re-enlazar botones dinámicos
+
+            // re-crear especificaciones
+            const contSpec = Utilidades.seleccionar('#grupoEspecificaciones'); contSpec.innerHTML = '';
+            const pares = Object.entries(d.specs||{});
+            if(!pares.length){
+              const fila = document.createElement('div');
+              fila.className = 'input-group';
+              fila.innerHTML = `<input name="claveEspecificacion" type="text" class="form-control" placeholder="Clave">
+                               <input name="valorEspecificacion" type="text" class="form-control" placeholder="Valor">
+                               <button class="btn btn-outline-secondary agregar-spec" type="button"><i class="bi bi-plus-lg"></i></button>`;
+              contSpec.appendChild(fila);
+            } else {
+              pares.forEach(([k,v], idx)=>{
+                const fila = document.createElement('div');
+                fila.className = 'input-group mb-2';
+                fila.innerHTML = `<input name="claveEspecificacion" type="text" class="form-control" value="${k}">
+                                 <input name="valorEspecificacion" type="text" class="form-control" value="${v}">
+                                 ${idx===0 ? '<button class="btn btn-outline-secondary agregar-spec" type="button"><i class="bi bi-plus-lg"></i></button>'
+                                            : '<button class="btn btn-outline-danger eliminar-spec" type="button"><i class="bi bi-x-lg"></i></button>'}`;
+                contSpec.appendChild(fila);
+              });
+            }
+            Vistas.Administracion.enlazar();
+            Utilidades.mostrarAviso({ titulo:'Edición', cuerpo:'Formulario cargado', variante:'primary' });
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          });
+        });
+        Utilidades.seleccionarTodos('#tablaDispositivos .btn-eliminar').forEach(btn=>{
+          btn.addEventListener('click', (e)=>{
+            const tr = e.currentTarget.closest('tr');
+            const id = tr.getAttribute('data-id');
+            if(confirm('¿Eliminar este dispositivo?')){
+              ServicioDispositivos.eliminar(id);
+              Utilidades.mostrarAviso({ titulo:'Eliminado', cuerpo:'Dispositivo eliminado', variante:'secondary' });
+              Vistas.Administracion.renderizar();
+            }
+          });
+        });
+      }
+    };
+
+    /* ============ *
+     *  Rutas       *
+     * ============ */
+    Enrutador.agregar(/^#\/?$/, () => Vistas.Inicio.renderizar());
+    Enrutador.agregar(/^#\/dispositivo\/(.+)$/, (id) => Vistas.Detalle.renderizar(id));
+    Enrutador.agregar(/^#\/administracion\/?$/, () => Vistas.Administracion.renderizar());
+
+    // Lanzar app 
+    document.addEventListener('DOMContentLoaded', () => {
+      Enrutador.analizar();
+      BusEventos.suscribir('dispositivos:cambiados', () => {
+        const { ruta } = Utilidades.obtenerConsulta();
+        if (ruta.startsWith('#/administracion')) Vistas.Administracion.renderizar();
+        else Vistas.Inicio.renderizar();
+      });
+    });
+  })();
+  </script>
+</body>
+</html>
