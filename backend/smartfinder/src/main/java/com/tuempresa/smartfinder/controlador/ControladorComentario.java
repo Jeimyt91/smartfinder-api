@@ -1,26 +1,31 @@
 package com.tuempresa.smartfinder.controlador;
 
-
-import com.tuempresa.smartfinder.dto.*; import com.tuempresa.smartfinder.servicio.*;
+import com.tuempresa.smartfinder.dto.ComentarioDTO;
+import com.tuempresa.smartfinder.servicio.ComentarioService;
 import org.springframework.web.bind.annotation.*;
-import java.util.*; import java.util.UUID;
 
+import java.util.List;
 
-@RestController @RequestMapping("/api/comments")
+@RestController
+@RequestMapping("/api/dispositivos/{deviceId}/comentarios")
 public class ControladorComentario {
-private final ComentarioService service;
-public ControladorComentario(ComentarioService s){ this.service=s; }
 
+  private final ComentarioService servicio;
 
-@GetMapping("/device/{deviceId}")
-public List<ComentarioDTO> porDispositivo(@PathVariable UUID deviceId){ return service.listar(deviceId); }
+  public ControladorComentario(ComentarioService servicio) {
+    this.servicio = servicio;
+  }
 
+  @GetMapping
+  public List<ComentarioDTO> listar(@PathVariable Long deviceId) {
+    return servicio.listar(deviceId);
+  }
 
-@PostMapping("/device/{deviceId}")
-public ComentarioDTO crear(@PathVariable UUID deviceId, @RequestBody Map<String,Object> body){
-String author = (String) body.getOrDefault("author","Anónimo");
-Integer rating = body.get("rating")==null?5:((Number)body.get("rating")).intValue();
-String text = (String) body.getOrDefault("text"," ");
-return service.crear(deviceId, author, rating, text);
-}
+  @PostMapping
+  public ComentarioDTO crear(@PathVariable Long deviceId,
+                             @RequestParam(required = false) String author,
+                             @RequestParam Integer rating,
+                             @RequestParam String text) {
+    return servicio.crear(deviceId, author, rating, text);
+  }
 }

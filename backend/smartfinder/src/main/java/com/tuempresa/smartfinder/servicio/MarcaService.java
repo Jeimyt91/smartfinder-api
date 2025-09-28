@@ -1,33 +1,33 @@
 package com.tuempresa.smartfinder.servicio;
 
-
-import com.tuempresa.smartfinder.dominio.*;
-import com.tuempresa.smartfinder.dto.*;
-import com.tuempresa.smartfinder.repositorio.*;
+import com.tuempresa.smartfinder.dominio.Marca;
+import com.tuempresa.smartfinder.dto.MarcaDTO;
+import com.tuempresa.smartfinder.dto.MarcaMapper;
+import com.tuempresa.smartfinder.repositorio.MarcaRepo;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-
-import java.util.*; import java.util.stream.*; import java.util.UUID;
-
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 public class MarcaService {
-private final MarcaRepo marcaRepo;
-public MarcaService(MarcaRepo marcaRepo){ this.marcaRepo = marcaRepo; }
 
+    private final MarcaRepo repo;
 
-public List<MarcaDTO> listar(){
-return marcaRepo.findAll().stream().map(m->{
-MarcaDTO dto=new MarcaDTO(); dto.id=m.getId(); dto.name=m.getName(); return dto;}).toList();
-}
+    public MarcaService(MarcaRepo repo){ this.repo = repo; }
 
+    public List<MarcaDTO> listar(){
+        return repo.findAll()
+                .stream()
+                .map(MarcaMapper::toDTO)
+                .collect(Collectors.toList());
+    }
 
-public MarcaDTO crear(String nombre){
-Marca m = marcaRepo.findByNameIgnoreCase(nombre).orElseGet(()->{ Marca x=new Marca(); x.setName(nombre); return marcaRepo.save(x); });
-MarcaDTO dto = new MarcaDTO(); dto.id=m.getId(); dto.name=m.getName(); return dto;
-}
-
-
-public Marca get(UUID id){ return marcaRepo.findById(id).orElseThrow(); }
+    public MarcaDTO crear(MarcaDTO dto){
+        if (dto.getNombre() == null || dto.getNombre().isBlank()) {
+            throw new IllegalArgumentException("El nombre es obligatorio");
+        }
+        Marca saved = repo.save(MarcaMapper.toEntity(dto));
+        return MarcaMapper.toDTO(saved);
+    }
 }

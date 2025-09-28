@@ -1,9 +1,9 @@
-package com.tuempresa.smartfinder.smartfinder;
+package com.tuempresa.smartfinder;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+@SpringBootApplication(scanBasePackages = "com.tuempresa.smartfinder")
 
-@SpringBootApplication
 public class SmartfinderApplication {
 
 	public static void main(String[] args) {

@@ -1,6 +1,5 @@
 package com.tuempresa.smartfinder.dominio;
 
-
 import jakarta.persistence.*;
 import java.time.OffsetDateTime;
 import java.util.UUID;

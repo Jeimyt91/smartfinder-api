@@ -1,72 +1,52 @@
 package com.tuempresa.smartfinder.dominio;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.*;
 import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
 
 @Entity
-@Table(name = "dispositivos")
+@Table(name = "dispositivo")
 public class Dispositivo {
 
-    @Id @GeneratedValue
-    private UUID id;
+  @Id
+  @GeneratedValue(strategy = GenerationType.IDENTITY)
+  private Long id;
 
-    @Column(nullable = false)
-    private String name;
+  @NotBlank
+  @Size(max = 120)
+  private String nombre;
 
-    @ManyToOne(optional = false)
-    @JoinColumn(name = "brand_id")
-    private Marca marca;
+  @NotBlank
+  @Size(max = 80)
+  private String marca;
 
-    @Column(nullable = false)
-    private String type; // móvil | portátil | tablet | wearable
+  @NotBlank
+  @Size(max = 40)
+  private String tipo;
 
-    private LocalDate releaseDate;
-    private BigDecimal price;
+  @NotNull
+  @DecimalMin("0.0")
+  private BigDecimal precio;
 
-    @Column(length = 300)
-    private String shortDesc;
+  @NotNull
+  private Boolean disponible = true;
 
-    @Column(columnDefinition = "text")
-    private String review;
+  // --- Getters y Setters ---
+  public Long getId() { return id; }
+  public void setId(Long id) { this.id = id; }
 
-    @OneToMany(mappedBy = "dispositivo", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<ImagenDispositivo> imagenes = new ArrayList<>();
+  public String getNombre() { return nombre; }
+  public void setNombre(String nombre) { this.nombre = nombre; }
 
-    @OneToMany(mappedBy = "dispositivo", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<EspecificacionDispositivo> especificaciones = new ArrayList<>();
+  public String getMarca() { return marca; }
+  public void setMarca(String marca) { this.marca = marca; }
 
-    // ===== Getters / Setters =====
-    public UUID getId() { return id; }
-    public void setId(UUID id) { this.id = id; }
+  public String getTipo() { return tipo; }
+  public void setTipo(String tipo) { this.tipo = tipo; }
 
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
+  public BigDecimal getPrecio() { return precio; }
+  public void setPrecio(BigDecimal precio) { this.precio = precio; }
 
-    public Marca getMarca() { return marca; }
-    public void setMarca(Marca marca) { this.marca = marca; }
-
-    public String getType() { return type; }
-    public void setType(String type) { this.type = type; }
-
-    public LocalDate getReleaseDate() { return releaseDate; }
-    public void setReleaseDate(LocalDate releaseDate) { this.releaseDate = releaseDate; }
-
-    public BigDecimal getPrice() { return price; }
-    public void setPrice(BigDecimal price) { this.price = price; }
-
-    public String getShortDesc() { return shortDesc; }
-    public void setShortDesc(String shortDesc) { this.shortDesc = shortDesc; }
-
-    public String getReview() { return review; }
-    public void setReview(String review) { this.review = review; }
-
-    public List<ImagenDispositivo> getImagenes() { return imagenes; }
-    public void setImagenes(List<ImagenDispositivo> imagenes) { this.imagenes = imagenes; }
-
-    public List<EspecificacionDispositivo> getEspecificaciones() { return especificaciones; }
-    public void setEspecificaciones(List<EspecificacionDispositivo> especificaciones) { this.especificaciones = especificaciones; }
+  public Boolean getDisponible() { return disponible; }
+  public void setDisponible(Boolean disponible) { this.disponible = disponible; }
 }
